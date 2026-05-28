@@ -1014,7 +1014,7 @@ void EZ_TypeCB(Widget widget, XtPointer client_data, XtPointer call_data)
     else if (ztype == ZONE_ITEM_SUBSTITUTE) itype = ITEM_SUBSTITUTE;
     else if (ztype == ZONE_ITEM_POUND) itype = ITEM_POUND;
     else if (ztype == ZONE_ITEM_ADMISSION) itype = ITEM_ADMISSION;
-    else itype = d->item_type.Value(); // For ZONE_ITEM, get from selector
+    else itype = ITEM_NORMAL; // For generic ZONE_ITEM, default to normal
 
     if (ztype == d->ztype && itype == d->itype)
         return;
@@ -1115,8 +1115,6 @@ ZoneDialog::ZoneDialog(Widget parent)
     item_name.Init(container, "This Button's True Name");
     item_zone_name.Init(container, "This Button's On-Screen Name, if Different than its True Name");
     item_print_name.Init(container, "This Button's Abbreviation for Remote Printing if Different than its True Name");
-    item_type.Init(container, "Menu Type", ItemTypeName, ItemTypeValue,
-                   reinterpret_cast<void*>(EZ_TypeCB), this);
     item_location.Init(container,"Event Location");
     item_event_time.Init(container, "Event Time");
     item_total_tickets.Init(container,"Total Seats");
@@ -1244,7 +1242,6 @@ int ZoneDialog::Open()
     item_print_name.Set(RStr());
     item_zone_name.Set(RStr());
     itype = RInt8();
-    item_type.Set(itype);
     item_location.Set(RStr());
     item_event_time.Set(RStr());
     item_total_tickets.Set(RStr());
@@ -1304,7 +1301,6 @@ int ZoneDialog::Correct()
     item_name.Show(IsItemZoneType(t));
     item_zone_name.Show(IsItemZoneType(t));
     item_print_name.Show(IsItemZoneType(t));
-    item_type.Show(t == ZONE_ITEM); // Only show item type selector for generic ZONE_ITEM
     // For new specific item zone types, derive itype from zone type
     if (t == ZONE_ITEM_NORMAL) itype = ITEM_NORMAL;
     else if (t == ZONE_ITEM_MODIFIER) itype = ITEM_MODIFIER;
@@ -1447,7 +1443,7 @@ int ZoneDialog::Send()
     WInt16(customer_type.Value());
     WInt8(drawer_zone_type.Value());
 
-    if(item_type.Value() == ITEM_ADMISSION)
+    if(itype == ITEM_ADMISSION)
     {
 	Str h_itemname,h_time,h_location,h_priceclass,hout;
 	h_itemname.Set(item_name.Value());
@@ -1464,7 +1460,7 @@ int ZoneDialog::Send()
     }
     WStr(item_print_name.Value());
     WStr(item_zone_name.Value());
-    WInt8(item_type.Value());
+    WInt8(itype);
     WStr(item_location.Value());
     WStr(item_event_time.Value());
     WStr(item_total_tickets.Value());
