@@ -1156,6 +1156,26 @@ int IndexTabZone::CanEdit(Terminal *t)
     return 0;
 }
 
+int IndexTabZone::State(Terminal *t)
+{
+    FnTrace("IndexTabZone::State()");
+    if (active == 0)
+        return 2;  // disabled
+    // Show selected appearance when the terminal is currently on this tab's target page
+    if (jump_id != 0 && t->page != nullptr && t->page->id == jump_id)
+        return 1;
+    return stay_lit;  // normal (0) or stay-lit
+}
+
+SignalResult IndexTabZone::Touch(Terminal *term, int tx, int ty)
+{
+    FnTrace("IndexTabZone::Touch()");
+    // Already on this tab's target page — nothing to do
+    if (jump_id != 0 && term->page != nullptr && term->page->id == jump_id)
+        return SIGNAL_IGNORED;
+    return ButtonZone::Touch(term, tx, ty);
+}
+
 // LanguageButtonZone implementation
 
 LanguageButtonZone::LanguageButtonZone()

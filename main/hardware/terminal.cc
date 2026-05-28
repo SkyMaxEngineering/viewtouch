@@ -5947,6 +5947,28 @@ int Terminal::ReadZone()
         edit_zone = nullptr;
     }
 
+    // Auto-create a menu page for a brand-new Index Tab button that has no jump target yet
+    if (newZone->Type() == ZONE_INDEX_TAB &&
+        edit_zone == nullptr &&
+        newZone->JumpType() && *newZone->JumpType() == JUMP_NONE &&
+        newZone->name.size() > 0)
+    {
+        int new_page_id = zone_db->NextAvailablePageID(60, page_size);
+        Page *autoPage  = NewPosPage();
+        if (autoPage != nullptr)
+        {
+            autoPage->id    = new_page_id;
+            autoPage->size  = page_size;
+            autoPage->type  = PAGE_ITEM;
+            autoPage->index = INDEX_GENERAL;
+            autoPage->name.Set(newZone->name.Value());
+            autoPage->Init(zone_db);
+            zone_db->Add(autoPage);
+            *newZone->JumpType() = JUMP_NORMAL;
+            *newZone->JumpID()   = new_page_id;
+        }
+    }
+
     if (newZone->Type() == ZONE_COMMENT)
         currPage->AddFront(newZone); // make sure comment zones are always on top
     else

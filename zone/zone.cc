@@ -1580,6 +1580,12 @@ int ZoneDB::Add(Page *p)
     if (p == nullptr)
         return 1;
 
+    if (p->id == 0)
+    {
+        ReportError("Page number 0 is not allowed");
+        return 1;
+    }
+
     // start at end of list and work backwords
     Page *ptr = page_list.Tail();
     while (ptr && (p->id < ptr->id || (p->id == ptr->id && p->size > ptr->size)))
@@ -1587,6 +1593,15 @@ int ZoneDB::Add(Page *p)
 
     // Insert p after ptr
     return page_list.AddAfterNode(ptr, p);
+}
+
+int ZoneDB::NextAvailablePageID(int start_id, int page_size)
+{
+    FnTrace("ZoneDB::NextAvailablePageID()");
+    int id = (start_id > 0) ? start_id : 1;
+    while (FindByID(id, page_size) != nullptr)
+        ++id;
+    return id;
 }
 
 int ZoneDB::AddUnique(Page *page)
