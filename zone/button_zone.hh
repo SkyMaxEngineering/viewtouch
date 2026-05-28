@@ -197,7 +197,11 @@ public:
     int          CanSelect(Terminal *t) override;
     int          CanEdit(Terminal *t) override;
     std::unique_ptr<Zone> Copy() override;
-    int  GainFocus(Terminal *term, Zone *oldfocus) override { return 0; }
+    int          GainFocus(Terminal *term, Zone *oldfocus) override { return 0; }
+    // Returns selected-state (1) when the terminal is currently on this tab's target page
+    int          State(Terminal *t) override;
+    // No-op when already on this tab's target page; otherwise delegates to ButtonZone
+    SignalResult Touch(Terminal *term, int tx, int ty) override;
 };
 
 class LanguageButtonZone : public ButtonZone

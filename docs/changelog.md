@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Added
+- **Index Tab Buttons: Selected visual feedback, no-op guard, page-zero block, and auto-page creation** (2026-05-28)
+  - `IndexTabZone::State()` now returns the selected state (1) whenever the terminal's current page matches the tab's `jump_id`. The tab for the active page is automatically rendered with its configured selected-state edge, texture, and font color (`frame[1]`, `texture[1]`, `color[1]`) — no new `Terminal` fields required.
+  - `IndexTabZone::Touch()` returns `SIGNAL_IGNORED` when the terminal is already on the tab's target page, preventing a redundant page jump.
+  - `ZoneDB::Add(Page*)` now rejects any page with `id == 0`, reporting an error. This is enforced at the single authoritative insertion point so no page with number zero can be created through any code path.
+  - `ZoneDB::NextAvailablePageID(int start_id, int page_size)` helper added — returns the first unused page ID ≥ `start_id` for the given screen size.
+  - When a **brand-new** `ZONE_INDEX_TAB` button is saved (via `Terminal::ReadZone()`), and it has no jump target yet (`JUMP_NONE`), a new `PAGE_ITEM` menu page is automatically created using the button's name, assigned the first available ID ≥ 60, and the button is set to `JUMP_NORMAL` pointing to that page. Editing an existing Index Tab with an already-configured jump is unaffected.
+  - Files modified: `zone/button_zone.hh`, `zone/button_zone.cc`, `zone/zone.hh`, `zone/zone.cc`, `main/hardware/terminal.cc`.
+
 ### Work In Progress
 - **Allow Multiple Terminal Logins (experimental)** (2026-04-12)
   - Added a persisted soft-switch `allow_multi_login` (bumped `SETTINGS_VERSION` to 107) which allows the same `Employee` to be logged into multiple terminals when enabled.

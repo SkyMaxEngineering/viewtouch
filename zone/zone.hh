@@ -388,6 +388,8 @@ public:
 
     int ValidateSystemPages();  // Check for System Pages with invalid parent_id values
     int PrintZoneDB(const char* dest = nullptr, int brief = 0);  // for debugging only
+    // Returns the first page ID >= start_id that is not already in use for the given size
+    int NextAvailablePageID(int start_id, int page_size);
 };
 
 #endif
