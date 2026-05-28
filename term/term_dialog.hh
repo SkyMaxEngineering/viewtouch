@@ -166,7 +166,6 @@ public:
     DialogMenu  color3;
     DialogMenu  shape;
     DialogMenu  shadow;
-    DialogMenu  item_type;
     DialogMenu  item_family;
     DialogMenu  item_sales;
     DialogMenu  item_printer;

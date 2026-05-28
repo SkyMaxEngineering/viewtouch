@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Removed
+- **Button Properties Dialog: Remove redundant "Menu Type" field** (2026-05-28)
+  - The "Menu Type" selector (`item_type` `DialogMenu` widget in `ZoneDialog`) was redundant with the more specific zone types already present in "Button's Type" (`ZONE_ITEM_NORMAL`, `ZONE_ITEM_MODIFIER`, `ZONE_ITEM_METHOD`, `ZONE_ITEM_SUBSTITUTE`, `ZONE_ITEM_POUND`, `ZONE_ITEM_ADMISSION`). The item classification (`itype`) is now derived entirely from the selected zone type; for the legacy generic `ZONE_ITEM` type the classification defaults to `ITEM_NORMAL`. The network protocol byte is preserved unchanged.
+  - Files modified: `term/term_dialog.hh`, `term/term_dialog.cc`.
+
 ### Added
 - **Index Tab Buttons: Selected visual feedback, no-op guard, page-zero block, and auto-page creation** (2026-05-28)
   - `IndexTabZone::State()` now returns the selected state (1) whenever the terminal's current page matches the tab's `jump_id`. The tab for the active page is automatically rendered with its configured selected-state edge, texture, and font color (`frame[1]`, `texture[1]`, `color[1]`) — no new `Terminal` fields required.
