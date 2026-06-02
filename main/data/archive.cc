@@ -644,6 +644,11 @@ int Archive::SavePacked()
         drawer->Write(df, DRAWER_VERSION);
         drawer = drawer->next;
     }
+    if (df.HasError())
+    {
+        ReportError("Archive::SavePacked(): I/O error writing drawers — archive may be corrupt");
+        return 1;
+    }
 
     // Save Checks
     count = 0;
@@ -658,6 +663,11 @@ int Archive::SavePacked()
     {
         c->Write(df, CHECK_VERSION);
         c = c->next;
+    }
+    if (df.HasError())
+    {
+        ReportError("Archive::SavePacked(): I/O error writing checks — archive may be corrupt");
+        return 1;
     }
 
     // Save Tips

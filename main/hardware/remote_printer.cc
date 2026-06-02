@@ -579,6 +579,16 @@ void PrinterCB(XtPointer client_data, int *fid, XtInputId *id)
                  p->host_name.Value(), p->port_no, p->failure);
         ReportError(errmsg.data());
 
+        // Deregister the Xt input handler BEFORE closing the socket.
+        // Without this, the event loop keeps polling the closed FD every tick,
+        // spinning in an infinite error loop that starves the main thread after
+        // ~10-12 hours of accumulated failures.
+        if (p->input_id >= 0)
+        {
+            RemoveInputFn(p->input_id);
+            p->input_id = -1;
+        }
+
         if (p->socket_no >= 0)
         {
             // close socket here instead of letting the destructor do it
@@ -587,7 +597,7 @@ void PrinterCB(XtPointer client_data, int *fid, XtInputId *id)
             p->socket_no = -1;
         }
 
-        // Critical fix: Don't kill the printer immediately, mark it for reconnection
+        // Don't kill the printer immediately, mark it for reconnection
         if (db)
         {
             // Mark printer as offline but keep it in the list for reconnection attempts

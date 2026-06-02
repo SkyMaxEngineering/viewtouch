@@ -258,8 +258,17 @@ int Printer::Close()
 {
     FnTrace("Printer::Close()");
 
-    // assume we're going to do something.  But only close if we're pretty
-    // sure we have a valid file handle
+    // LPD and socket printing block the calling thread (system() / connect()).
+    // Delegate to CloseAsync() which dispatches to a thread pool so the main
+    // event loop is never stalled waiting for CUPS or a network printer.
+    // CloseAsync() owns temp_fd/temp_name cleanup for these two types.
+    if (target_type == TARGET_LPD || target_type == TARGET_SOCKET)
+    {
+        CloseAsync();
+        return 0;
+    }
+
+    // For all other target types: close the file handle, dispatch, then clean up.
     if (temp_fd > 0)
         close(temp_fd);
     switch (target_type)
@@ -267,17 +276,13 @@ int Printer::Close()
     case TARGET_PARALLEL:
         ParallelPrint();
         break;
-    case TARGET_LPD:
-        LPDPrint();
-        break;
-    case TARGET_SOCKET:
-        SocketPrint();
-        break;
     case TARGET_FILE:
         FilePrint();
         break;
     case TARGET_EMAIL:
         EmailPrint();
+        break;
+    default:
         break;
     }
     // delete the temp file unless printing to the parallel port might still need it

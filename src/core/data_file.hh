@@ -131,6 +131,17 @@ public:
     int Write(Flt  *val, int bk = 0);
     int Write(Str  *val, int bk = 0);
     [[nodiscard]] const std::string &FileName() const noexcept { return filename; }
+    // Returns true if any underlying write has failed (e.g. disk full).
+    [[nodiscard]] bool HasError() const noexcept
+    {
+        if (compress && gz_fp)
+        {
+            int errnum = 0;
+            gzerror(gz_fp, &errnum);
+            return errnum != Z_OK && errnum != Z_STREAM_END;
+        }
+        return file_fp && ferror(file_fp) != 0;
+    }
 };
 
 /*********************************************************************
