@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Fixed
+- **Printing & Ticket Saving: Fix 10-12 hour runtime failure** (2026-06-02)
+  - After extended runtime (~10-12 hours) the system would silently stop printing and saving new orders. Three bugs combined to cause this.
+  - **Root cause — stale Xt input handler spin loop (`main/hardware/remote_printer.cc`):** `PrinterCB()` was closing the socket and marking the printer offline (`failure = 999`) but never calling `RemoveInputFn(p->input_id)`. The X event loop continued polling the closed file descriptor on every tick, creating an infinite error-callback spin loop. Over 10-12 hours of normal restaurant operation this CPU waste progressively starved the main event thread, causing both printing and order-saving to hang. Fix: deregister the input handler (`RemoveInputFn` + `input_id = -1`) before closing the socket in the offline-marking block.
+  - **Secondary — blocking `system()` call in `LPDPrint` (`main/hardware/printer.cc`):** `Printer::Close()` called the synchronous `LPDPrint()` (which runs `system("cat file | lpr -P...")`) on the main thread. If CUPS became unresponsive this blocked the entire event loop for the duration. Fix: `Close()` now delegates `TARGET_LPD` and `TARGET_SOCKET` to `CloseAsync()`, which already dispatches print jobs to a background thread pool.
+  - **Tertiary — silent I/O errors in archive save (`main/data/archive.cc`, `src/core/data_file.hh`):** `Archive::SavePacked()` did not check for write errors after the drawer and check write loops. A disk-full or I/O error would be silently ignored and the archive marked as successfully saved. Fix: added `OutputDataFile::HasError()` (using `ferror`/`gzerror`) and inserted checks after both write loops with appropriate `ReportError` messages and early-return on failure.
+  - Files modified: `main/hardware/remote_printer.cc`, `main/hardware/printer.cc`, `main/data/archive.cc`, `src/core/data_file.hh`.
+
 ### Removed
 - **Button Properties Dialog: Remove redundant "Menu Type" field** (2026-05-28)
   - The "Menu Type" selector (`item_type` `DialogMenu` widget in `ZoneDialog`) was redundant with the more specific zone types already present in "Button's Type" (`ZONE_ITEM_NORMAL`, `ZONE_ITEM_MODIFIER`, `ZONE_ITEM_METHOD`, `ZONE_ITEM_SUBSTITUTE`, `ZONE_ITEM_POUND`, `ZONE_ITEM_ADMISSION`). The item classification (`itype`) is now derived entirely from the selected zone type; for the legacy generic `ZONE_ITEM` type the classification defaults to `ITEM_NORMAL`. The network protocol byte is preserved unchanged.
