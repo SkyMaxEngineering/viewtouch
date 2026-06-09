@@ -50,8 +50,8 @@ namespace vt {
  */
 class ThreadPool {
 public:
-    // Singleton instance - use 2 threads by default for RPi
-    static ThreadPool& instance(size_t num_threads = 2) {
+    // Singleton instance - 4 threads handles concurrent print jobs to multiple printers
+    static ThreadPool& instance(size_t num_threads = 4) {
         static ThreadPool pool(num_threads);
         return pool;
     }
@@ -114,31 +114,40 @@ public:
     }
 
     /**
-     * @brief Enqueue a task without caring about the result (fire-and-forget)
-     * @param f Function to execute
-     * @param args Arguments to pass
-     * 
-     * More efficient than enqueue() when you don't need the result.
+     * @brief Enqueue a task without caring about the result (fire-and-forget).
+     *
+     * IMPORTANT: This is intentionally non-blocking.  The caller may be the
+     * main Xt event loop thread.  Blocking it even briefly causes the UI,
+     * printing, and order saving to freeze under heavy load.
+     *
+     * If the queue is full the job is dropped and a message is written to
+     * stderr.  A missed print is recoverable (operator can reprint); a frozen
+     * POS is not.
+     *
+     * @return true if the job was queued, false if it was dropped.
      */
     template<typename F, typename... Args>
-    void enqueue_detached(F&& f, Args&&... args) {
+    bool enqueue_detached(F&& f, Args&&... args) {
         auto task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-        
+
         {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            
-            if (stop_) return;
+            std::lock_guard<std::mutex> lock(queue_mutex_);
 
-            queue_not_full_.wait(lock, [this] {
-                return tasks_.size() < max_queue_size_ || stop_;
-            });
+            if (stop_) return false;
 
-            if (stop_) return;
+            if (tasks_.size() >= max_queue_size_) {
+                fprintf(stderr,
+                    "ThreadPool::enqueue_detached: queue full (%zu/%zu), "
+                    "dropping job\n",
+                    tasks_.size(), max_queue_size_);
+                return false;
+            }
 
             tasks_.emplace(std::move(task));
         }
-        
+
         condition_.notify_one();
+        return true;
     }
 
     /**
@@ -191,7 +200,7 @@ private:
     explicit ThreadPool(size_t num_threads) 
         : stop_(false)
         , active_tasks_(0)
-        , max_queue_size_(64)  // Bounded queue for memory safety
+        , max_queue_size_(256) // Large enough for a busy shift; see enqueue_detached for drop policy
     {
         workers_.reserve(num_threads);
         

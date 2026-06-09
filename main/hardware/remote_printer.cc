@@ -263,7 +263,11 @@ const char* RemotePrinter::RStr(char* s)
 
 int RemotePrinter::Send()
 {
-    if (buffer_out->size > 4096)
+    // Flush when the buffer is at least half full.  buffer_out is created
+    // as CharQueue(1024), so send_size == 512.  The old threshold of 4096
+    // was larger than the entire buffer and so never triggered, causing
+    // large receipts to overflow the ring buffer and lose data silently.
+    if (buffer_out->size > (buffer_out->buffer_size / 2))
         SendNow();
     return 0;
 }

@@ -343,7 +343,7 @@ void Printer::CloseAsync()
     temp_name.Set("");  // Clear so printer can be reused
 
     // Queue the print job to the thread pool
-    vt::ThreadPool::instance().enqueue_detached(
+    bool queued = vt::ThreadPool::instance().enqueue_detached(
         [temp_file, target_str, port, type]() {
             vt::Logger::debug("Async print starting: {} -> {}:{}", temp_file, target_str, port);
             
@@ -422,6 +422,13 @@ void Printer::CloseAsync()
             unlink(temp_file.c_str());
         }
     );
+
+    if (!queued) {
+        // Thread pool is full. The temp file will be orphaned in the printqueue
+        // directory but the operator needs to know so they can reprint.
+        ReportError("Print job dropped: thread pool queue full. Please reprint.");
+        unlink(temp_file.c_str()); // clean up the temp file we won't be sending
+    }
 }
 
 /****
