@@ -1,4 +1,5 @@
 #include "data_persistence_manager.hh"
+#include "thread_pool.hh"
 #include "main/data/system.hh"
 #include "main/business/check.hh"
 #include "main/data/settings.hh"
@@ -94,6 +95,8 @@ DataPersistenceManager::DataPersistenceManager()
     , cups_consecutive_failures(0)
     , shutdown_in_progress(false)
     , force_shutdown(false)
+    , cups_monitor_stop_(false)
+    , save_in_progress_(false)
 {
     FnTrace("DataPersistenceManager::DataPersistenceManager()");
 
@@ -103,11 +106,16 @@ DataPersistenceManager::DataPersistenceManager()
     // Reserve space for logs to reduce reallocations
     error_log.reserve(static_cast<std::size_t>(config.max_error_log_size));
     warning_log.reserve(static_cast<std::size_t>(config.max_warning_log_size));
+
+    // Start the background CUPS monitor thread so health checks never
+    // run on the main event loop thread.
+    StartCUPSMonitorThread();
 }
 
 DataPersistenceManager::~DataPersistenceManager()
 {
     FnTrace("DataPersistenceManager::~DataPersistenceManager()");
+    StopCUPSMonitorThread();
     if (!shutdown_in_progress) {
         PrepareForShutdown();
     }
@@ -451,44 +459,95 @@ void DataPersistenceManager::ForceCUPSRecovery()
 void DataPersistenceManager::ProcessPeriodicTasks()
 {
     FnTrace("DataPersistenceManager::ProcessPeriodicTasks()");
-    
+
     // Skip all periodic tasks during shutdown to prevent hanging
     if (shutdown_in_progress.load(std::memory_order_acquire)) {
         LogInfo("Skipping periodic tasks during shutdown to prevent hanging");
         return;
     }
-    
+
     auto now = std::chrono::steady_clock::now();
-    
+
     // Check if auto-save is needed
     if (config.enable_auto_save) {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_auto_save);
         if (elapsed >= config.auto_save_interval) {
-            // Check if there's actually dirty data to save
-            if (IsDataDirty("checks") || IsDataDirty("settings") || IsDataDirty("archives")) {
-                // Skip auto-save if any terminal is in edit mode to avoid interrupting user workflow
-                if (IsAnyTerminalInEditMode()) {
-                    LogInfo("Skipping auto-save - terminal in edit mode (data is dirty)");
-                } else {
-                    LogInfo("Performing periodic auto-save (dirty data detected)");
-                    SaveResult result = SaveCriticalData();
-                    if (result == SAVE_SUCCESS) {
-                        last_auto_save = now;
-                        LogInfo("Auto-save completed successfully");
-                    } else {
-                        LogError("Auto-save failed with result: " + std::to_string(result), "auto_save");
+            last_auto_save = now; // advance timestamp immediately so we don't re-enter
+
+            if (IsAnyTerminalInEditMode()) {
+                LogInfo("Skipping auto-save - terminal in edit mode");
+            } else if (!save_in_progress_.exchange(true)) {
+                // Dispatch to thread pool so the main event loop thread is
+                // never blocked by disk I/O across potentially hundreds of checks.
+                bool queued = vt::ThreadPool::instance().enqueue_detached(
+                    [this]() {
+                        SaveResult result = SaveCriticalData();
+                        if (result != SAVE_SUCCESS) {
+                            LogError("Background auto-save failed with result: " +
+                                     std::to_string(result), "auto_save");
+                        }
+                        save_in_progress_.store(false, std::memory_order_release);
                     }
+                );
+                if (!queued) {
+                    // Thread pool is full — clear the flag so next tick can retry
+                    save_in_progress_.store(false, std::memory_order_release);
+                    LogWarning("Auto-save deferred: thread pool queue full", "auto_save");
                 }
-            } else {
-                // No dirty data, just update the timestamp to avoid constant checking
-                last_auto_save = now;
-                LogInfo("Auto-save skipped - no dirty data");
             }
+            // else: previous save is still running, skip this cycle
         }
     }
-    
-    // Check CUPS status
-    CheckCUPSStatus();
+
+    // CUPS status is checked by the background CUPSMonitorLoop thread.
+    // Do NOT call CheckCUPSStatus() here — it forks a process and busy-polls
+    // for up to 5 seconds, which stalls the main event loop.
+}
+
+// ---------------------------------------------------------------------------
+// Background CUPS monitor thread — runs independently of the main event loop
+// ---------------------------------------------------------------------------
+
+void DataPersistenceManager::StartCUPSMonitorThread()
+{
+    cups_monitor_stop_.store(false, std::memory_order_release);
+    cups_monitor_thread_ = std::thread([this]() { CUPSMonitorLoop(); });
+}
+
+void DataPersistenceManager::StopCUPSMonitorThread()
+{
+    {
+        std::lock_guard<std::mutex> lock(cups_monitor_mutex_);
+        cups_monitor_stop_.store(true, std::memory_order_release);
+    }
+    cups_monitor_cv_.notify_all();
+    if (cups_monitor_thread_.joinable())
+        cups_monitor_thread_.join();
+}
+
+void DataPersistenceManager::CUPSMonitorLoop()
+{
+    while (!cups_monitor_stop_.load(std::memory_order_acquire)) {
+        // Sleep for the configured interval (default 60 s), waking early on stop
+        std::unique_lock<std::mutex> lock(cups_monitor_mutex_);
+        cups_monitor_cv_.wait_for(lock, config.cups_check_interval,
+            [this]() { return cups_monitor_stop_.load(std::memory_order_acquire); });
+
+        if (cups_monitor_stop_.load(std::memory_order_acquire))
+            break;
+
+        if (shutdown_in_progress.load(std::memory_order_acquire))
+            break;
+
+        // Run the potentially-slow health check here, safely off the main thread
+        bool healthy = CheckCUPSHealth();
+        cups_communication_healthy.store(healthy, std::memory_order_release);
+
+        if (!healthy) {
+            LogWarning("CUPS communication unhealthy - attempting recovery", "cups");
+            AttemptCUPSRecovery();
+        }
+    }
 }
 
 void DataPersistenceManager::Update()

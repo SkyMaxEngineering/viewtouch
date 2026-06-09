@@ -3,7 +3,9 @@
 
 #include "basic.hh"
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <thread>
 #include <vector>
 #include <functional>
 #include <mutex>
@@ -148,6 +150,18 @@ private:
     // Shutdown state - atomic for thread safety
     std::atomic<bool> shutdown_in_progress;
     std::atomic<bool> force_shutdown;
+
+    // Background thread for CUPS health checks (must never run on the main thread)
+    std::thread cups_monitor_thread_;
+    std::mutex cups_monitor_mutex_;
+    std::condition_variable cups_monitor_cv_;
+    std::atomic<bool> cups_monitor_stop_;
+    void CUPSMonitorLoop();
+    void StartCUPSMonitorThread();
+    void StopCUPSMonitorThread();
+
+    // Guard against dispatching SaveAllChecks while a previous dispatch is still running
+    std::atomic<bool> save_in_progress_;
 
     // Performance metrics
     struct PerformanceMetrics {
